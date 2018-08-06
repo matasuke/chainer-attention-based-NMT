@@ -1,5 +1,5 @@
 import collections
-import numpy as np
+    import numpy as np
 
 import chainer
 import chainer.functions as F
@@ -55,7 +55,7 @@ class seq2seq(chainer.Chain):
         exs = sequence_embed(self.embed_x, xs)
         eys = sequence_embed(self.embed_y, ys_in)
 
-        hx, cx, _ = self.encoder(None, None, exs)
+        hx, cx, att = self.encoder(None, None, exs)
         _, _, os = self.decoder(hx, cx, eys)
 
         concat_os = F.concat(os, axis=0)

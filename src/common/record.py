@@ -13,12 +13,11 @@ def record_settings(out, args, dataset_conf):
     # subprocess.call("cp *.py %s" % out, shell=True)
 
     config_file = out / 'configurations.txt'
-    args = vars(args)
     with open(config_file, "w") as f:
 
         # write arguments
         f.write('Arguments' + '\n')
-        for key, value in args.items():
+        for key, value in vars(args).items():
             f.write(key + '\t' + str(value) + '\n')
 
         # write Dataset configurations
