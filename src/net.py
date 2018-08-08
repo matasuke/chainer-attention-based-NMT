@@ -1,5 +1,5 @@
 import collections
-    import numpy as np
+import numpy as np
 
 import chainer
 import chainer.functions as F
@@ -13,6 +13,7 @@ tokens = collections.Counter({
     '<EOS>': 2
 })
 
+
 def sequence_embed(embed, xs):
     x_len = [len(x) for x in xs]
     x_selection = np.cumsum(x_len[:-1])
@@ -20,6 +21,33 @@ def sequence_embed(embed, xs):
     exs = F.split_axis(ex, x_selection, 0)
 
     return exs
+
+
+class Encoder(chainer.Chain):
+    def __init__(
+            self,
+            n_layers,
+            n_vocab,
+            n_hidden,
+            dropout
+    ):
+        super(Encoder, self).__init__()
+        with self.init_scope():
+            self.embed_x = L.EmbedID(n_vocab, n_hidden)
+            self.bilstm = L.NStepBiLSTM(n_layers, n_hidden, n_hidden, dropout)
+
+    def __call__(self, xs):
+        batch_size, max_length = len(xs)
+
+        x_len = [len(x) for x in xs]
+        x_selection = np.cumsum(x_len[:-1])
+        ex = self.embed_x(F.concat(xs, axis=0))
+        exs = F.split_axis(ex, x_selection, 0)
+
+        _, _, hx = self.bilstm(None, None, exs)
+        hxs = F.pad_sequence(hx, length=max_length, padding=-1024)
+
+        return hxs
 
 class seq2seq(chainer.Chain):
     def __init__(
@@ -41,7 +69,9 @@ class seq2seq(chainer.Chain):
             self.embed_x = L.EmbedID(n_source_vocab, n_units)
             self.embed_y = L.EmbedID(n_target_vocab, n_units)
             self.encoder = L.NStepLSTM(n_layers, n_units, n_units, dropout_ratio)
-            self.decoder = L.NStepLSTM(n_layers, n_units, n_units, dropout_ratio)
+            self.att_mpa = L.Linear(n_units, 1)
+            self.decoder = L.LSTM(n_units, n_units)
+            # self.decoder = L.NStepLSTM(n_layers, n_units, n_units, dropout_ratio)
             self.l1 = L.Linear(n_units, n_target_vocab)
 
     def __call__(self, xs, ys):
@@ -55,8 +85,10 @@ class seq2seq(chainer.Chain):
         exs = sequence_embed(self.embed_x, xs)
         eys = sequence_embed(self.embed_y, ys_in)
 
-        hx, cx, att = self.encoder(None, None, exs)
-        _, _, os = self.decoder(hx, cx, eys)
+        hx, cx, ys = self.encoder(None, None, exs)
+        for ex in eys.T:
+            hs = self.decoder(ex)
+        # _, _, os = self.decoder(hx, cx, eys)
 
         concat_os = F.concat(os, axis=0)
         concat_ys_out = F.concat(ys_out, axis=0)
