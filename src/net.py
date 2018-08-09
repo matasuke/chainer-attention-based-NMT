@@ -40,9 +40,10 @@ class seq2seq(chainer.Chain):
         with self.init_scope():
             self.embed_x = L.EmbedID(n_source_vocab, n_units)
             self.embed_y = L.EmbedID(n_target_vocab, n_units)
-            self.encoder = L.NStepLSTM(n_layers, n_units, n_units, dropout_ratio)
-            self.decoder = L.NStepLSTM(n_layers, n_units, n_units, dropout_ratio)
+            self.encoder = L.NStepBiLSTM(n_layers, n_units, n_units, dropout_ratio)
+            self.decoder = L.NStepBiLSTM(n_layers, n_units, n_units, dropout_ratio)
             self.l1 = L.Linear(n_units, n_target_vocab)
+            self.fbh = L.Linear(n_units, n_units)
 
     def __call__(self, xs, ys):
         batch = len(xs)
@@ -55,7 +56,12 @@ class seq2seq(chainer.Chain):
         exs = sequence_embed(self.embed_x, xs)
         eys = sequence_embed(self.embed_y, ys_in)
 
-        hx, cx, _ = self.encoder(None, None, exs)
+        hx, cx, yx = self.encoder(None, None, exs)
+
+        # calculate attention
+        concat_ys = F.concat(yx, axis=0)
+
+
         _, _, os = self.decoder(hx, cx, eys)
 
         concat_os = F.concat(os, axis=0)
