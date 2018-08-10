@@ -28,21 +28,17 @@ class AttentionModule(chainer.Chain):
     def __init__(self, n_hidden):
         super(AttentionModule, self).__init__()
         with self.init_scope():
-            self.fbh = L.Linear(n_hidden, n_hidden*2)
-            self.hh = L.Linear(n_hidden, n_hidden*2)
-            self.hw = L.Linear(n_hidden*2, 1)
+            self.fbh = L.Linear(n_hidden, n_hidden)
+            self.hh = L.Linear(n_hidden, n_hidden)
+            self.hw = L.Linear(n_hidden, 1)
 
         self.n_hidden = n_hidden
 
     def __call__(self, enc_h, dec_h):
-        batch_size = len(dec_h)
+        batch_size = len(enc_h)
 
         ws = []
-        sum_w = Variable(self.xp.zeros((batch_size, 1), dtype='float32'))
-
-        for i, h in enumerate(enc_h):
-            pad_num = batch_size - h.shape[0]
-            enc_h[i] = F.pad(h, [(0, pad_num), (0, 0)], 'constant')
+        sum_w = Variable(self.xp.zeros((batch_size, 1), dtype='floar32'))
 
         for h in enc_h:
             w = F.tanh(self.fbh(h) + self.hh(dec_h))
@@ -52,7 +48,7 @@ class AttentionModule(chainer.Chain):
 
         att = Variable(self.xp.zeros((batch_size, self.n_hidden), dtype='float32'))
 
-        for fb, w in zip(enc_h, ws):
+        for fb, w in zip(enc_h, w):
             w /= sum_w
             att += F.reshape(F.batch_matmul(fb, w), (batch_size, self.n_hidden))
 
@@ -75,18 +71,17 @@ class seq2seq(chainer.Chain):
         self.dropout_ratio = dropout_ratio
 
         with self.init_scope():
-            self.embed_x = L.EmbedID(n_source_vocab, n_hidden, ignore_label=-1)
-            self.embed_y = L.EmbedID(n_target_vocab, n_hidden*2, ignore_label=-1)
+            self.embed_x = L.EmbedID(n_source_vocab, n_hidden)
+            self.embed_y = L.EmbedID(n_target_vocab, n_hidden)
             self.fh_encoder = L.LSTM(n_hidden, n_hidden)
             self.bh_encoder = L.LSTM(n_hidden, n_hidden)
-            self.decoder = L.LSTM(n_hidden*4, n_hidden*2)
+            self.decoder = L.LSTM(n_hidden*2, n_hidden*2)
             self.W = L.Linear(n_hidden*2, n_target_vocab)
             self.attention = AttentionModule(n_hidden*2)
 
     def __call__(self, xs, ys):
         batch = len(xs)
         # delete <SOS> and <EOS> from x and reverse the order
-
         xsf = [x[1:-1] for x in xs]
         xsb = [x[1:-1][::-1] for x in xs]
 
@@ -97,14 +92,9 @@ class seq2seq(chainer.Chain):
         exs_b = sequence_embed(self.embed_x, xsb)
         eys = sequence_embed(self.embed_y, ys_in)
 
-        # sort decriasing order for LSTM input to accept
-        # sequences of variable length.
-        # and transpose sequence to get time t's input batch.
         exs_f = F.transpose_sequence(sorted(exs_f, key=len, reverse=True))
         exs_b = F.transpose_sequence(sorted(exs_b, key=len, reverse=True))
         eys = F.transpose_sequence(sorted(eys, key=len, reverse=True))
-
-        # padding eys for calculating attention.
 
         f_list = []
         b_list = []
@@ -114,29 +104,21 @@ class seq2seq(chainer.Chain):
             f = self.fh_encoder(ex)
             f = F.dropout(f, self.dropout_ratio)
             f_list.append(f)
+
         self.bh_encoder.reset_state()
-        for ex in exs_b:
+        for ex in exs_f:
             b = self.bh_encoder(ex)
             b = F.dropout(b, self.dropout_ratio)
             b_list.append(b)
 
-        fb_list = [F.concat([f_list[i], b_list[i]], axis=1) for i in range(len(exs_f))]
-        # concat_fb = fb_list
-        # concat_fb = F.concat(fb_list, axis=0)
+        fb_list = [F.concat([f_list[i], b_list[i]], axis=0) for i in range(len(exs_f))]
+        concat_fb = F.concat(fb_list, axis=1)
 
-        dec_h = Variable(self.xp.zeros((batch, self.n_hidden*2), dtype='float32'))
-
-        # TODO: how to feed encoder's cell and hidden state into decoder ?
+        dec_h = Variable(self.xp.zeros(batch, self.n_hidden), dtype='float32')
         h_list = []
         for h_w in eys:
-            att = self.attention(fb_list, dec_h)
-
-            # padding for calculating attention.
-            if att.shape != h_w.shape:
-                pad_num = att.shape[0] - h_w.shape[0]
-                h_w = F.pad(h_w, [(0, pad_num), (0, 0)], 'constant')
-
-            h_w = F.concat([att, h_w], axis=1)
+            att = self.attention(concat_fb, dec_h)
+            h_w = F.concat([att, h_w], axis=0)
             dec_h = self.decoder(h_w)
             h_list.append(dec_h)
 
