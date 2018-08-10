@@ -140,10 +140,13 @@ class seq2seq(chainer.Chain):
             dec_h = self.decoder(h_w)
             h_list.append(dec_h)
 
+        h_list = F.concat(h_list, 0)
         h_list = F.transpose(h_list)
 
         concat_os = F.concat(h_list, axis=0)
         concat_ys_out = F.concat(ys_out, axis=0)
+        print(len(concat_os))
+        print(len(concat_ys_out))
         loss = F.sum(F.softmax_cross_entropy(
             self.W(concat_os), concat_ys_out, reduce="no")) / batch
 
