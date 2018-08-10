@@ -1,3 +1,6 @@
+import math
+from collections import defaultdict
+
 from nltk.translate import bleu_score
 import chainer
 
@@ -24,22 +27,26 @@ class CalculateBleu(chainer.training.Extension):
         self.n_grams = n_grams
         self.weights = [1./n_grams for _ in range(0, n_grams)]
 
-    def __call__(self, iterator):
+    def __call__(self, trainer):
         with chainer.no_backprop_mode():
             references = []
             hypotheses = []
+
             for i in range(0, len(self.test_data), self.batch):
                 sources, targets = zip(*self.test_data[i:i + self.batch])
-                references.extend([[t.tolist()] for t in targets])
-
-                sources = [chainer.dataset.to_device(self.device, x) for x in sources]
-                ys = [y.tolist() for y in self.model.translate(sources, self.max_length)]
+                references.extend([[t[1:-1].tolist()] for t in targets])
+                sources = [
+                    chainer.dataset.to_device(self.device, x) for x in sources
+                ]
+                ys = [
+                    y.tolist() for y in self.model.translate(sources, self.max_length)
+                ]
                 hypotheses.extend(ys)
 
         bleu = bleu_score.corpus_bleu(
             references,
             hypotheses,
-            self.weights,
             smoothing_function=bleu_score.SmoothingFunction().method1
         )
-        chainer.report({self.key: bleu})
+
+        chainer.report({self.key: round(bleu*100, 1)})
