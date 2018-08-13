@@ -24,6 +24,18 @@ def sequence_embed(embed, xs):
     return exs
 
 
+class Encoder (chainer.Chain):
+    def __init__(self, n_vocab, n_layers, n_hidden, dropout_ratio):
+        super(Encoder, self).__init__()
+        with self.init_scope():
+            self.embed_x = L.EmbedID(n_vocab, n_hidden, ignore_label=-1)
+            self.bilstm = L.NStepBiLSTM(n_layers, n_hidden, n_hidden, dropout_ratio)
+
+    def __call__(self, xs):
+        batch_size, max_length = xs.shape
+
+        exs = self.embed_x(xs)
+
 class AttentionModule(chainer.Chain):
     def __init__(self, n_hidden):
         super(AttentionModule, self).__init__()
@@ -139,7 +151,7 @@ class seq2seq(chainer.Chain):
             h_w = F.concat([att, h_w], axis=1)
             dec_h = self.decoder(h_w)
             h_list.append(dec_h)
-
+        print(len(h_list))
         h_list = F.concat(h_list, 0)
         h_list = F.transpose(h_list)
 
