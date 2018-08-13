@@ -15,7 +15,7 @@ tokens = collections.Counter({
 })
 
 
-class Seq2Seeq(chainer.Chain):
+class Seq2Seq(chainer.Chain):
 
     def __init__(
             self,
@@ -31,7 +31,7 @@ class Seq2Seeq(chainer.Chain):
         super(Seq2Seq, self).__init__()
         with self.init_scope():
             self.encoder = Encoder(
-                n_layer,
+                n_layers,
                 n_source_vocab,
                 n_encoder_units,
                 dropout
@@ -53,6 +53,7 @@ class Seq2Seeq(chainer.Chain):
         ys_in = [y[:-1] for y in ys]
         ys_out = [y[1:] for y in ys]
 
+        print(ys_in)
         hxs = self.encoder(xs)
         os = self.decoder(ys_in, hxs)
 
@@ -65,19 +66,20 @@ class Encoder(chainer.Chain):
     def __init__(self, n_layers, n_vocab, n_units, dropout):
         super(Encoder, self).__init__()
         with self.init_scope():
-            self.embed_x = L.EmbedId(n_vocab, u_units, ignore_label=-1)
+            self.embed_x = L.EmbedID(n_vocab, n_units, ignore_label=-1)
             self.bilstm = L.NStepBiLSTM(n_layers, n_units, n_units, dropout)
 
     def __call__(self, xs):
-        batch_size, max_length = xs.shape
+        max_length = max([len(x) for x in xs])
 
-        exs = self.embed_x(xs)
-        exs = F.separate(exs, axis=0)
-        masks = self.xp.vsplit(xs != -1, batch_size)
-        masked_exs = [ex[mask.reshape((-1, ))] for ex, mask in zip(exs, masks)]
+        exs = sequence_embed(self.embed_x, xs)
+        # exs = self.embed_x(xs)
+        # exs = F.separate(exs, axis=0)
+        # masks = self.xp.vsplit(xs != -1, batch_size)
+        # masked_exs = [ex[mask.reshape((-1, ))] for ex, mask in zip(exs, masks)]
 
-        _, _, hxs = self.bilstm(None, None, masked_exs)
-        hxs = F.pad_sequences(hxs, length=max_length, padding=0.0)
+        _, _, hxs = self.bilstm(None, None, exs)
+        hxs = F.pad_sequence(hxs, length=max_length, padding=0.0)
 
         return hxs
 
@@ -90,7 +92,7 @@ class Decoder(chainer.Chain):
         with self.init_scope():
             self.embed_y = L.EmbedID(n_vocab, n_units, ignore_label=-1)
             self.lstm = L.StatelessLSTM(n_units+n_encoder_output_units, n_units)
-            self.maxout = L.Maxout(n_units+n_encoder_output_units+u_units,
+            self.maxout = L.Maxout(n_units+n_encoder_output_units+n_units,
                                    n_maxout_units, n_maxout_pools)
             self.w = L.Linear(n_maxout_units, n_vocab)
             self.attention = AttentionModule(n_encoder_output_units, n_attention_units, n_units)
@@ -99,27 +101,30 @@ class Decoder(chainer.Chain):
     def __call__(self, ys, hxs):
         batch_size, max_length, encoder_output_size = hxs.shape
         compute_context = self.attention(hxs)
-        c = Varialbe(self.xp.zeros((batch_size, self.n_units), 'f'))
-        h = Variable(self.xp.zeros((batch_size, self.n_units)), 'f')
+        c = Variable(self.xp.zeros((batch_size, self.n_units), 'f'))
+        h = Variable(self.xp.zeros((batch_size, self.n_units), 'f'))
 
         os = []
+        print(ys.T)
         for y in self.xp.hsplit(ys, ys.shape[1]):
             y = y.reshape((batch_size, ))
             eys = self.embed_y(y)
-            context = conpute_context(eys)
+            context = compute_context(eys)
             concatenated = F.concat([eys, context])
 
             c, h = self.lstm(c, h, concatenated)
             concatenated = F.concat([concatenated, h])
             o = self.w(self.maxout(concatenated))
 
+            os.append(o)
+
         return os
 
-    def translate(self, hsx, max_length=100):
+    def translate(self, hxs, max_length=100):
         batch_size, _, _ = hxs.shape
         compute_context = self.attention(hxs)
-        c = Varialbe(self.xp.zeros((batch_size, self.n_units), 'f'))
-        h = Variable(self.xp.zeros((batch_size, self.n_units)), 'f')
+        c = Variable(self.xp.zeros((batch_size, self.n_units), 'f'))
+        h = Variable(self.xp.zeros((batch_size, self.n_units), 'f'))
 
         ys = self.xp.full(batch_size, tokens['<SOS>'], np.int32)
 
@@ -127,7 +132,7 @@ class Decoder(chainer.Chain):
         for _ in range(max_length):
             eys = self.embed_y(ys)
 
-            context = conpute_context(h)
+            context = compute_context(h)
             concatenated = F.concat([eys, context])
 
             c, h = self.lstm(c, h, concatenated)
@@ -146,10 +151,11 @@ class Decoder(chainer.Chain):
             if len(inds) > 0:
                 y = y[:inds[0, 0]]
             outs.append(y)
+
         return outs
 
 
-def AttentionModule(chainer.Chain):
+class AttentionModule(chainer.Chain):
 
     def __init__(self, n_encoder_output_units,
                  n_attention_units, n_decoder_units):
@@ -169,7 +175,7 @@ def AttentionModule(chainer.Chain):
             self.h(
                 F.reshape(
                     hxs,
-                    (batch_size*max_length, self.n_encoder_output_size)
+                    (batch_size*max_length, self.n_encoder_output_units)
                 )
             ),
             (batch_size, max_length, self.n_attention_units)

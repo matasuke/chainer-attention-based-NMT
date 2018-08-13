@@ -19,7 +19,7 @@ from common.record import record_settings
 from common.ENV import SLACK_URL, SLACK_REPORT_CHANNEL_NAME, SLACK_TRANSLATION_CHANNEL_NAME
 from extensions.SlackNortifier import SlackNortifier, post2slack
 from extensions.CalculateBleu import CalculateBleu
-from net import seq2seq
+from net2 import Seq2Seq
 
 
 def get_arguments():
@@ -154,6 +154,26 @@ def seq2seq_pad_convert(batch, device):
 
     return {'xs': pad_xs, 'ys': pad_ys}
 
+def convert(batch, device):
+    """convert batch for updater to fit"""
+    def to_device_batch(batch):
+        if device is None:
+            return batch
+        elif device < 0:
+            return [chainer.dataset.to_device(device, x) for x in batch]
+        else:
+            xp = cuda.cupy.get_array_module(*batch)
+            concat = xp.concatenate(batch, axis=0)
+            sections = np.cumsum([len(x) for x in batch[:-1]], dtype=np.int32)
+            concat_dev = chainer.dataset.to_device(device, concat)
+            batch_dev = cuda.cupy.split(concat_dev, sections)
+
+            return batch_dev
+
+    return {'xs': to_device_batch([x for x, _ in batch]),
+            'ys': to_device_batch([y for _, y in batch])}
+
+
 def main():
 
     args = get_arguments()
@@ -178,12 +198,15 @@ def main():
     record_settings(args.out, args, dataset_configurations)
 
     # setup model
-    model = seq2seq(
+    model = Seq2Seq(
         args.layer,
         len(train_data.get_source_word_ids),
         len(train_data.get_target_word_ids),
-        args.unit,
-        dropout_ratio=0.1
+        n_encoder_units=args.unit,
+        dropout=0.1,
+        n_decoder_units=args.unit*2,
+        n_attention_units=args.unit,
+        n_maxout_units = args.unit
     )
 
     if args.gpu >= 0:
