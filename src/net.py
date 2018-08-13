@@ -87,6 +87,14 @@ class seq2seq(chainer.Chain):
         self.dropout_ratio = dropout_ratio
 
         with self.init_scope():
+<<<<<<< HEAD
+            self.embed_x = L.EmbedID(n_source_vocab, n_units)
+            self.embed_y = L.EmbedID(n_target_vocab, n_units)
+            self.encoder = L.NStepBiLSTM(n_layers, n_units, n_units, dropout_ratio)
+            self.decoder = L.NStepBiLSTM(n_layers, n_units, n_units, dropout_ratio)
+            self.l1 = L.Linear(n_units, n_target_vocab)
+            self.fbh = L.Linear(n_units, n_units)
+=======
             self.embed_x = L.EmbedID(n_source_vocab, n_hidden, ignore_label=-1)
             self.embed_y = L.EmbedID(n_target_vocab, n_hidden*2, ignore_label=-1)
             self.fh_encoder = L.LSTM(n_hidden, n_hidden)
@@ -94,6 +102,7 @@ class seq2seq(chainer.Chain):
             self.decoder = L.LSTM(n_hidden*4, n_hidden*2)
             self.W = L.Linear(n_hidden*2, n_target_vocab)
             self.attention = AttentionModule(n_hidden*2)
+>>>>>>> 82f8a949e586c11a4260f72db381a650e1e3c4ba
 
     def __call__(self, xs, ys):
         batch = len(xs)
@@ -109,6 +118,17 @@ class seq2seq(chainer.Chain):
         exs_b = sequence_embed(self.embed_x, xsb)
         eys = sequence_embed(self.embed_y, ys_in)
 
+<<<<<<< HEAD
+        hx, cx, yx = self.encoder(None, None, exs)
+
+        # calculate attention
+        concat_ys = F.concat(yx, axis=0)
+
+
+        _, _, os = self.decoder(hx, cx, eys)
+
+        concat_os = F.concat(os, axis=0)
+=======
         # sort decriasing order for LSTM input to accept
         # sequences of variable length.
         # and transpose sequence to get time t's input batch.
@@ -156,6 +176,7 @@ class seq2seq(chainer.Chain):
         h_list = F.transpose(h_list)
 
         concat_os = F.concat(h_list, axis=0)
+>>>>>>> 82f8a949e586c11a4260f72db381a650e1e3c4ba
         concat_ys_out = F.concat(ys_out, axis=0)
         print(len(concat_os))
         print(len(concat_ys_out))

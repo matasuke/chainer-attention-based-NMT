@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 
+from chainer.dataset import convert
 import chainer
 from chainer.backends import cuda
 from chainer.training import extensions
@@ -144,25 +145,14 @@ def get_arguments():
     return args
 
 
-def convert(batch, device):
-    """convert batch for updater to fit"""
-    def to_device_batch(batch):
-        if device is None:
-            return batch
-        elif device < 0:
-            return [chainer.dataset.to_device(device, x) for x in batch]
-        else:
-            xp = cuda.cupy.get_array_module(*batch)
-            concat = xp.concatenate(batch, axis=0)
-            sections = np.cumsum([len(x) for x in batch[:-1]], dtype=np.int32)
-            concat_dev = chainer.dataset.to_device(device, concat)
-            batch_dev = cuda.cupy.split(concat_dev, sections)
+def seq2seq_pad_convert(batch, device):
 
-            return batch_dev
+    xs, ys = zip(*batch)
 
-    return {'xs': to_device_batch([x for x, _ in batch]),
-            'ys': to_device_batch([y for _, y in batch])}
+    pad_xs = convert.concat_examples(xs, device, padding=-1)
+    pad_ys = convert.concat_examples(ys, device, padding=-1)
 
+    return {'xs': pad_xs, 'ys': pad_ys}
 
 def main():
 
